@@ -14,6 +14,131 @@ NginxPhpAIScanner 是一个 Python 服务，旨在通过分析 Nginx 和 PHP-FPM
 *   **错误处理**：对配置文件缺失、API 密钥无效、日志文件不可读、API 调用失败等多种异常情况进行了处理，并将相关错误信息记录到控制台和 HTML 报告中。
 *   **Gemini API 调用记录** (可选)：可以配置记录所有对 Gemini API 的请求和响应（或错误）到指定的 JSON Lines 文件中，方便调试和审计。此功能默认为开启。
 
+## 项目逻辑
+
+以下是 NginxPhpAIScanner 项目的逻辑结构图和详细说明：
+
+```mermaid
+graph LR
+    %% 主题和方向
+    %%theme base
+    %%direction LR
+
+    subgraph "👤 用户交互"
+        U["<br>👨‍💻<br>用户/管理员<br>"]:::userStyle
+    end
+
+    subgraph "🛡️ NginxPhpAIScanner 服务"
+        direction LR
+        subgraph "⚙️ 核心脚本"
+            C["<br>📄<br>config.py<br><small>(配置参数)</small>"]:::scriptStyle
+            M["<br>🚀<br>main.py<br><small>(主控脚本)</small>"]:::scriptStyle
+            GC["<br>🤖<br>gemini_client.py<br><small>(API交互)</small>"]:::scriptStyle
+        end
+
+        subgraph "🧩 内部模块"
+            RL["<br>📜<br>日志读取模块<br><small>(read_latest_log_lines)</small>"]:::moduleStyle
+            RU["<br>📊<br>报告更新模块<br><small>(update_report_html)</small>"]:::moduleStyle
+        end
+
+        subgraph "💾 监控的日志文件"
+            L1[("<br>📄<br>Nginx Access Log<br>")]:::logStyle
+            L2[("<br>📄<br>Nginx Error Log<br>")]:::logStyle
+            L3[("<br>📄<br>PHP-FPM Log<br>")]:::logStyle
+        end
+
+        subgraph "📝 输出文件"
+            HR["<br>📈<br>report.html<br><small>(HTML报告)</small>"]:::fileStyle
+            APILog["<br>记录<br>gemini_api_log.json<br><small>(API调用日志)</small>"]:::fileStyle
+        end
+
+        C --> M
+        M --> RL
+        M --> GC
+        GC -->|分析请求<br>JSON| GeminiAPI
+        GeminiAPI -->|分析结果<br>JSON| GC
+        GC --> M
+        M --> RU
+        RU --> HR
+        GC -.->|可选记录| APILog
+    end
+
+    subgraph "☁️ 外部服务"
+        GeminiAPI["<br>🧠<br>Google Gemini AI<br>"]:::apiStyle
+    end
+
+    %% 连接关系
+    U -->|1. 配置| C
+    U -->|2. 运行| M
+    U -->|4. 查看报告| HR
+
+    L1 -->|数据| RL
+    L2 -->|数据| RL
+    L3 -->|数据| RL
+
+    %% 样式定义
+    classDef userStyle fill:#E6F3FF,stroke:#007bff,stroke-width:2px,color:#000,font-weight:bold,rx:5px,ry:5px
+    classDef scriptStyle fill:#FFF3CD,stroke:#FFC107,stroke-width:2px,color:#000,font-weight:bold,shape:hexagon
+    classDef moduleStyle fill:#E9ECEF,stroke:#6C757D,stroke-width:1.5px,color:#000,rx:5px,ry:5px
+    classDef logStyle fill:#E2F0D9,stroke:#548235,stroke-width:2px,color:#000,shape:cylinder
+    classDef fileStyle fill:#FCE4EC,stroke:#E91E63,stroke-width:2px,color:#000,shape:note
+    classDef apiStyle fill:#D1F2EB,stroke:#1ABC9C,stroke-width:2px,color:#000,font-weight:bold,shape:cloud
+
+    %% 为特定节点应用样式 (如果Mermaid版本支持在定义时应用，则上面的:::已足够)
+    %% class U userStyle
+    %% class C,M,GC scriptStyle
+    %% class RL,RU moduleStyle
+    %% class L1,L2,L3 logStyle
+    %% class HR,APILog fileStyle
+    %% class GeminiAPI apiStyle
+```
+
+<details>
+<summary>详细逻辑说明：</summary>
+
+1.  **配置加载 ([`config.py`](config.py:0))**：
+    *   用户首先需要编辑 [`config.py`](config.py:0) 文件，设置 Gemini API 密钥、项目 ID、Nginx 和 PHP-FPM 日志文件的准确路径、报告 HTML 文件的输出路径，以及扫描频率等参数。
+    *   此配置文件是整个服务的行为基础。
+
+2.  **主程序启动 ([`main.py`](main.py:0))**：
+    *   用户通过 `python main.py` 命令启动服务。
+    *   [`main.py`](main.py:0) 中的 [`main_scan_loop()`](main.py:294) 函数是核心的调度器。它首先会检查所有必要的配置是否已设置，如果配置不完整则会提示错误并退出。
+    *   如果报告 HTML 文件尚不存在，会先创建一个基础的空报告。
+
+3.  **定时扫描循环**：
+    *   服务进入一个无限循环，每次循环代表一轮日志检测。
+    *   循环的间隔时间由 [`config.py`](config.py:24) 中的 `SCAN_INTERVAL_SECONDS` 控制。
+
+4.  **日志读取 ([`read_latest_log_lines()`](main.py:18) in [`main.py`](main.py:0))**：
+    *   在每一轮检测开始时，脚本会针对 [`config.py`](config.py:0) 中定义的 Nginx 访问日志、Nginx 错误日志和 PHP-FPM 日志，分别调用 [`read_latest_log_lines()`](main.py:18) 函数。
+    *   该函数负责读取指定日志文件的最后 `LOG_LINES_TO_READ` 行内容。
+    *   如果日志文件不存在或为空，会记录相应信息并跳过该日志的分析。
+
+5.  **AI 分析请求 ([`call_gemini_api()`](gemini_client.py:35) in [`gemini_client.py`](gemini_client.py:0))**：
+    *   对于每个成功读取到内容的日志文件，其数据会被传递给 [`gemini_client.py`](gemini_client.py:0) 中的 [`call_gemini_api()`](gemini_client.py:35) 函数。
+    *   此函数负责：
+        *   构建发送给 Google Gemini API 的 HTTP 请求。请求体中包含一个精心设计的 `systemInstruction` (系统提示)，指示 AI 模型扮演网络安全分析师的角色，并要求其以特定的 JSON 格式返回分析结果（包括发现、严重性、描述、建议和摘要）。
+        *   使用 `requests` 库将包含日志数据的请求发送到 `GEMINI_API_URL`。
+        *   处理 API 的响应，包括错误检查和 JSON 解析。模型返回的原始文本输出会被再次尝试解析为 JSON 对象。
+
+6.  **API 调用日志记录 (可选)**：
+    *   如果 [`config.py`](config.py:27) 中的 `LOG_GEMINI_API_CALLS` 设置为 `True`，[`gemini_client.py`](gemini_client.py:0) 中的 [`_log_api_call()`](gemini_client.py:8) 函数会将每次对 Gemini API 的请求详情和响应内容（或错误信息）以 JSON Lines 格式记录到 [`config.py`](config.py:30) 中 `GEMINI_API_LOG_PATH` 指定的文件中。
+
+7.  **结果整合与报告更新 ([`update_report_html()`](main.py:33) in [`main.py`](main.py:0))**：
+    *   [`call_gemini_api()`](gemini_client.py:35) 返回的分析结果（或错误信息）会被收集起来。
+    *   所有日志类型的分析结果将传递给 [`main.py`](main.py:0) 中的 [`update_report_html()`](main.py:33) 函数。
+    *   此函数负责：
+        *   读取现有的 HTML 报告文件（如果存在）。
+        *   将新的分析结果格式化为 HTML 片段，并追加或更新到报告内容中。报告会清晰地展示每个日志类型的分析时间、发现的详细信息（包括严重性、描述、建议和相关的原始日志行）以及 AI 给出的总体摘要。
+        *   将更新后的完整 HTML 内容写回到 [`config.py`](config.py:21) 中 `REPORT_HTML_PATH` 指定的文件。
+
+8.  **用户查看报告**：
+    *   用户可以通过浏览器访问配置好的 `REPORT_HTML_PATH` 来查看最新的安全分析报告。
+
+这个流程确保了服务能够持续监控日志文件，利用 AI 进行智能分析，并将结果以易于理解的方式呈现给用户。
+
+</details>
+
 ## 技术栈
 
 *   **Python 3** (PRD 建议 3.13, 代码具有良好兼容性)
