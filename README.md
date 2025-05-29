@@ -141,7 +141,7 @@ graph LR
 
 ## 技术栈
 
-*   **Python 3** (PRD 建议 3.13, 代码具有良好兼容性)
+*   **Python 3** (测试环境为 3.13, 代码具有良好兼容性)
 *   **Google Gemini API**: 用于日志内容的智能分析。
 *   **Requests**: 用于与 Gemini API 进行 HTTP 通信。
 
@@ -155,7 +155,6 @@ graph LR
 ├── gemini_client.py    # 封装与 Gemini API 交互的客户端逻辑
 ├── LICENSE             # 项目许可证文件 (MIT)
 ├── main.py             # 主程序入口，负责调度和报告生成
-├── PRD.md              # 产品需求文档
 ├── README.md           # 本文件
 └── requirements.txt    # Python 依赖包列表
 ```
@@ -235,12 +234,11 @@ location /NginxPhpAIScanner/report.html {
 }
 ```
 确保已创建 `.htpasswd` 文件并添加了授权用户。
-PRD 中提及的示例报告 URL 为 `https://yanshanlaosiji.top/NginxPhpAIScanner/report.html`。
 
 ## 已知问题与待办事项
 
 *   **HTML 报告更新机制**：当前 [`main.py`](main.py:33-291) 中更新现有 HTML 报告的逻辑较为脆弱，依赖精确的字符串替换。未来可以考虑使用模板引擎（如 Jinja2）来提高其鲁棒性。
-*   **进程行为检测缺失**：`PRD.md` ([`PRD.md:10`](PRD.md:10)) 中提到了“进程行为检测”，但当前版本仅实现了日志文件分析。此功能有待后续开发。
+*   **进程行为检测缺失**：即为 “进程行为检测”，但当前版本仅实现了日志文件分析。此功能有待后续开发。
 *   **日志轮转适应性**：如果服务器上的日志文件启用了轮转机制，当前固定文件名的读取方式可能需要调整以适应。
 *   **增强日志记录**：可以从当前的 `print` 输出改进为使用 Python 的 `logging` 模块，以实现更灵活和结构化的应用日志记录。
 
