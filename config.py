@@ -2,7 +2,7 @@
 
 # ==================== AI API 提供商选择 ====================
 # 可选值: "gemini" 或 "openrouter"
-AI_PROVIDER = "gemini"  # 默认使用 Gemini API
+AI_PROVIDER = "openrouter"  # 默认使用 openrouter
 
 # ==================== Gemini API 配置 ====================
 # Gemini API Key
