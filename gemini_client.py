@@ -32,24 +32,31 @@ def _log_api_call(request_payload, response_data=None, error_message=None):
     except Exception as e:
         print(f"写入 Gemini API 日志失败: {e}")
 
-def call_gemini_api(log_data_str):
-    """调用 Gemini API 并获取分析结果"""
+def call_gemini_api(log_data_str, proxies=None):
+    """
+    调用 Gemini API 并获取分析结果。
+    :param log_data_str: 要分析的日志数据字符串。
+    :param proxies: 可选的代理配置字典，例如 {"http": "http://127.0.0.1:10809", "https": "http://127.0.0.1:10809"}
+    :return: API 分析结果或错误信息。
+    """
     if not config.GEMINI_API_KEY or config.GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
         print("错误：Gemini API Key 未在 config.py 中配置。")
         return None
-    if not config.GEMINI_API_URL or "YOUR_PROJECT_ID" in config.GEMINI_API_URL:
-        print("错误：Gemini API URL 未在 config.py 中正确配置项目ID。")
+    if not config.GEMINI_API_URL: #移除了对 PROJECT_ID 的检查, 因为 generativelanguage URL 不含它
+        print("错误：Gemini API URL 未在 config.py 中配置。")
         return None
 
+    # generativelanguage.googleapis.com 端点使用 API Key 作为 URL 参数
+    api_url_with_key = f"{config.GEMINI_API_URL}?key={config.GEMINI_API_KEY}"
+
     headers = {
-        "Authorization": f"Bearer {config.GEMINI_API_KEY}",
         "Content-Type": "application/json",
     }
 
     # 根据 PRD 文档构建请求体
-    # 注意：PRD 中的示例是图文问答，这里我们只需要文本
-    # 我们需要构建一个更适合日志分析的 systemInstruction 和 user prompt
-    system_prompt = (
+    # 我们需要构建一个更适合日志分析的 system_instruction 和 user prompt
+    # 对于 generativelanguage.googleapis.com, 使用 system_instruction
+    system_instruction_text = (
         "你是一个专业的网络安全分析师，专门分析 Nginx 和 PHP 日志以检测潜在的入侵或恶意活动。"
         "请仔细分析提供的日志片段，并以 JSON 格式返回你的分析结果。"
         "JSON 应包含以下字段："
@@ -66,9 +73,8 @@ def call_gemini_api(log_data_str):
     )
 
     payload = {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [{"text": system_prompt}]
+        "system_instruction": { # Vertex AI 使用 systemInstruction, generativelanguage 使用 system_instruction
+            "parts": [{"text": system_instruction_text}]
         },
         "contents": [
             {
@@ -77,10 +83,10 @@ def call_gemini_api(log_data_str):
             }
         ],
         "generationConfig": {
-            "response_mime_type": config.GEMINI_RESPONSE_MIME_TYPE,
-            "max_output_tokens": config.GEMINI_MAX_OUTPUT_TOKENS
+            "responseMimeType": config.GEMINI_RESPONSE_MIME_TYPE, # generativelanguage 使用 responseMimeType
+            "maxOutputTokens": config.GEMINI_MAX_OUTPUT_TOKENS # generativelanguage 使用 maxOutputTokens
         },
-        "safetySettings": [ # 沿用 PRD 中的安全设置示例
+        "safetySettings": [ # 安全设置结构相同
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -92,8 +98,7 @@ def call_gemini_api(log_data_str):
         # 在发送请求前记录
         if config.LOG_GEMINI_API_CALLS:
             _log_api_call(request_payload=payload)
-
-        response = requests.post(config.GEMINI_API_URL, headers=headers, json=payload, timeout=120) # 增加超时时间
+        response = requests.post(api_url_with_key, headers=headers, json=payload, timeout=120, proxies=proxies) # 使用带 key 的 URL 和代理
         response.raise_for_status()  # 如果请求失败 (状态码 4xx or 5xx), 会抛出 HTTPError
         
         # 尝试解析 JSON 响应
@@ -101,7 +106,7 @@ def call_gemini_api(log_data_str):
 
         # 从响应中提取模型生成的文本内容
         # 根据 PRD 的响应结构，内容在 candidates[0].content.parts[0].text
-        if (response_json.get("candidates") and 
+        if (response_json.get("candidates") and
             len(response_json["candidates"]) > 0 and
             response_json["candidates"][0].get("content") and
             response_json["candidates"][0]["content"].get("parts") and
@@ -129,7 +134,6 @@ def call_gemini_api(log_data_str):
             if config.LOG_GEMINI_API_CALLS:
                 _log_api_call(request_payload=payload, response_data=response_json, error_message=error_msg)
             return error_detail
-
     except requests.exceptions.RequestException as e:
         error_msg = f"调用 Gemini API 时发生网络错误: {e}"
         print(error_msg)

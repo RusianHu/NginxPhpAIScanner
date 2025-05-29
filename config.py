@@ -11,9 +11,8 @@ PHP_FPM_LOG_PATH = "/www/server/php/74/var/log/php-fpm.log"
 # 每次检测读取的最新日志行数
 LOG_LINES_TO_READ = 500
 
-# Gemini API 相关配置
-GEMINI_API_URL = "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models/gemini-2.5-flash-preview-05-20:generateContent"  # 请替换为您的 PROJECT_ID
-GEMINI_MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+# Gemini API 与模型相关配置
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent" # 切换到 generativelanguage 并使用指定模型
 GEMINI_MAX_OUTPUT_TOKENS = 2048 # 增加 token 数量以容纳可能的 JSON 输出
 GEMINI_RESPONSE_MIME_TYPE = "application/json"
 
