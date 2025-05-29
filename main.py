@@ -285,6 +285,11 @@ def update_report_html(analysis_results):
     final_html_output = report_content_accumulator + html_footer_content + body_end_marker
 
     try:
+        # 确保报告文件所在的目录存在
+        report_dir = os.path.dirname(config.REPORT_HTML_PATH)
+        if report_dir: # 确保 report_dir 不是空字符串 (例如，如果路径只是一个文件名)
+            os.makedirs(report_dir, exist_ok=True)
+
         with open(config.REPORT_HTML_PATH, 'w', encoding='utf-8') as f:
             f.write(final_html_output)
         print(f"报告已更新: {config.REPORT_HTML_PATH}")
@@ -449,8 +454,12 @@ if __name__ == "__main__":
         print("错误：请在 config.py 中正确配置您的 GEMINI_API_URL (包含 PROJECT_ID)。")
         missing_configs = True
     for key, value in required_configs.items():
-        if value is None or (isinstance(value, (int, float)) and value == 0 and key not in ["SCAN_INTERVAL_SECONDS"]): # SCAN_INTERVAL_SECONDS 可以是0用于测试
-            if key not in ["GEMINI_API_KEY", "GEMINI_API_URL"]: # 上面已经检查过了
+        if value is None or (isinstance(value, (int, float)) and value == 0 and key not in ["SCAN_INTERVAL_SECONDS", "ENABLE_NGINX_STATUS_CHECK"]):
+            # For ENABLE_NGINX_STATUS_CHECK, False is a valid value and is treated as 0 in the condition above.
+            # So, if the key is ENABLE_NGINX_STATUS_CHECK and value is False (which makes the (value == 0) part true), we should not mark it as an error.
+            if key == "ENABLE_NGINX_STATUS_CHECK" and isinstance(value, bool) and value is False:
+                pass # False is a valid configuration for ENABLE_NGINX_STATUS_CHECK
+            elif key not in ["GEMINI_API_KEY", "GEMINI_API_URL"]: # These are checked separately
                 print(f"错误：配置项 {key} 未在 config.py 中设置或值无效。")
                 missing_configs = True
     
