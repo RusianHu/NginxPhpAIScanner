@@ -6,8 +6,9 @@ import subprocess # 用于执行外部命令
 # import requests # requests 已移至 gemini_client.py
 from datetime import datetime
 
-# 从 gemini_client.py 导入封装的 API 调用函数
+# 从 AI 客户端模块导入封装的 API 调用函数
 from gemini_client import call_gemini_api
+from openrouter_client import call_openrouter_api
 
 # 从 config.py 导入配置
 try:
@@ -30,6 +31,26 @@ def read_latest_log_lines(log_path, num_lines):
         return []
 
 # def call_gemini_api(log_data_str): ... # 此函数已移至 gemini_client.py
+
+def call_ai_api(log_data_str, proxies=None):
+    """
+    根据配置选择合适的 AI API 提供商进行调用。
+    :param log_data_str: 要分析的日志数据字符串。
+    :param proxies: 可选的代理配置字典。
+    :return: API 分析结果或错误信息。
+    """
+    ai_provider = getattr(config, "AI_PROVIDER", "gemini").lower()
+
+    if ai_provider == "openrouter":
+        print(f"使用 OpenRouter API (模型: {getattr(config, 'OPENROUTER_MODEL', 'unknown')}) 进行分析...")
+        return call_openrouter_api(log_data_str, proxies=proxies)
+    elif ai_provider == "gemini":
+        print("使用 Gemini API 进行分析...")
+        return call_gemini_api(log_data_str, proxies=proxies)
+    else:
+        error_msg = f"不支持的 AI 提供商: {ai_provider}。请在 config.py 中将 AI_PROVIDER 设置为 'gemini' 或 'openrouter'。"
+        print(f"错误：{error_msg}")
+        return {"error": error_msg}
 
 def update_report_html(analysis_results):
     """将分析结果更新到静态 HTML 报告页面"""
@@ -366,22 +387,23 @@ def perform_scan_and_update_report(proxies=None):
             continue
 
         log_data_str = "".join(latest_lines)
-        print(f"准备调用 Gemini API 分析 {log_type} 日志 ({len(latest_lines)} 行)...")
-        
-        analysis_result = call_gemini_api(log_data_str, proxies=proxies)
+        ai_provider = getattr(config, "AI_PROVIDER", "gemini").lower()
+        print(f"准备调用 {ai_provider.upper()} API 分析 {log_type} 日志 ({len(latest_lines)} 行)...")
+
+        analysis_result = call_ai_api(log_data_str, proxies=proxies)
 
         if analysis_result:
             analysis_result.setdefault("log_type", log_type)
             analysis_result.setdefault("timestamp", datetime.now().isoformat())
             all_analysis_results_for_this_run.append(analysis_result)
-            print(f"Gemini API 对 {log_type} 日志分析完成。")
+            print(f"{ai_provider.upper()} API 对 {log_type} 日志分析完成。")
         else:
-            print(f"Gemini API 对 {log_type} 日志分析失败。")
+            print(f"{ai_provider.upper()} API 对 {log_type} 日志分析失败。")
             error_result = {
                 "timestamp": datetime.now().isoformat(),
                 "log_type": log_type,
                 "error": "API call returned no result or an unrecoverable error.",
-                "summary": "无法从Gemini API获取分析结果。"
+                "summary": f"无法从{ai_provider.upper()} API获取分析结果。"
             }
             all_analysis_results_for_this_run.append(error_result)
     
@@ -436,9 +458,10 @@ def main_scan_loop():
 
 if __name__ == "__main__":
     # 确保必要的配置存在
+    ai_provider = getattr(config, "AI_PROVIDER", "gemini").lower()
+
     required_configs = {
-        "GEMINI_API_KEY": getattr(config, "GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"),
-        "GEMINI_API_URL": getattr(config, "GEMINI_API_URL", "YOUR_PROJECT_ID"),
+        "AI_PROVIDER": ai_provider,
         "NGINX_ACCESS_LOG_PATH": getattr(config, "NGINX_ACCESS_LOG_PATH", None),
         "NGINX_ERROR_LOG_PATH": getattr(config, "NGINX_ERROR_LOG_PATH", None),
         "PHP_FPM_LOG_PATH": getattr(config, "PHP_FPM_LOG_PATH", None),
@@ -447,23 +470,58 @@ if __name__ == "__main__":
         "SCAN_INTERVAL_SECONDS": getattr(config, "SCAN_INTERVAL_SECONDS", 0),
         "ENABLE_NGINX_STATUS_CHECK": getattr(config, "ENABLE_NGINX_STATUS_CHECK", True), # 添加新的配置项检查，默认为True
     }
-    # 打印 Nginx 状态检测的配置状态
+
+    # 根据选择的 AI 提供商添加相应的配置检查
+    if ai_provider == "gemini":
+        required_configs.update({
+            "GEMINI_API_KEY": getattr(config, "GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"),
+            "GEMINI_API_URL": getattr(config, "GEMINI_API_URL", "YOUR_PROJECT_ID"),
+        })
+    elif ai_provider == "openrouter":
+        required_configs.update({
+            "OPENROUTER_API_KEY": getattr(config, "OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY"),
+            "OPENROUTER_API_URL": getattr(config, "OPENROUTER_API_URL", None),
+            "OPENROUTER_MODEL": getattr(config, "OPENROUTER_MODEL", None),
+        })
+    # 打印配置状态
+    print(f"配置加载：AI 提供商设置为 '{ai_provider.upper()}'")
     print(f"配置加载：Nginx 状态检测已 {'启用' if required_configs['ENABLE_NGINX_STATUS_CHECK'] else '禁用'} (通过 ENABLE_NGINX_STATUS_CHECK 配置)。")
 
     missing_configs = False
-    if required_configs["GEMINI_API_KEY"] == "YOUR_GEMINI_API_KEY":
-        print("错误：请在 config.py 中配置您的 GEMINI_API_KEY。")
+
+    # 验证 AI 提供商特定的配置
+    if ai_provider == "gemini":
+        if required_configs.get("GEMINI_API_KEY") == "YOUR_GEMINI_API_KEY":
+            print("错误：请在 config.py 中配置您的 GEMINI_API_KEY。")
+            missing_configs = True
+        if "YOUR_PROJECT_ID" in str(required_configs.get("GEMINI_API_URL", "")):
+            print("错误：请在 config.py 中正确配置您的 GEMINI_API_URL (包含 PROJECT_ID)。")
+            missing_configs = True
+    elif ai_provider == "openrouter":
+        if required_configs.get("OPENROUTER_API_KEY") == "YOUR_OPENROUTER_API_KEY":
+            print("错误：请在 config.py 中配置您的 OPENROUTER_API_KEY。")
+            missing_configs = True
+        if not required_configs.get("OPENROUTER_API_URL"):
+            print("错误：请在 config.py 中配置您的 OPENROUTER_API_URL。")
+            missing_configs = True
+        if not required_configs.get("OPENROUTER_MODEL"):
+            print("错误：请在 config.py 中配置您的 OPENROUTER_MODEL。")
+            missing_configs = True
+    else:
+        print(f"错误：不支持的 AI 提供商 '{ai_provider}'。请将 AI_PROVIDER 设置为 'gemini' 或 'openrouter'。")
         missing_configs = True
-    if "YOUR_PROJECT_ID" in required_configs["GEMINI_API_URL"]:
-        print("错误：请在 config.py 中正确配置您的 GEMINI_API_URL (包含 PROJECT_ID)。")
-        missing_configs = True
+    # 验证通用配置项
     for key, value in required_configs.items():
+        # 跳过已经单独验证的 API 相关配置
+        if key in ["GEMINI_API_KEY", "GEMINI_API_URL", "OPENROUTER_API_KEY", "OPENROUTER_API_URL", "OPENROUTER_MODEL", "AI_PROVIDER"]:
+            continue
+
         if value is None or (isinstance(value, (int, float)) and value == 0 and key not in ["SCAN_INTERVAL_SECONDS", "ENABLE_NGINX_STATUS_CHECK"]):
             # For ENABLE_NGINX_STATUS_CHECK, False is a valid value and is treated as 0 in the condition above.
             # So, if the key is ENABLE_NGINX_STATUS_CHECK and value is False (which makes the (value == 0) part true), we should not mark it as an error.
             if key == "ENABLE_NGINX_STATUS_CHECK" and isinstance(value, bool) and value is False:
                 pass # False is a valid configuration for ENABLE_NGINX_STATUS_CHECK
-            elif key not in ["GEMINI_API_KEY", "GEMINI_API_URL"]: # These are checked separately
+            else:
                 print(f"错误：配置项 {key} 未在 config.py 中设置或值无效。")
                 missing_configs = True
     
