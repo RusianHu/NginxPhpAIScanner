@@ -53,8 +53,7 @@ def call_gemini_api(log_data_str, proxies=None):
         "Content-Type": "application/json",
     }
 
-    # 根据 PRD 文档构建请求体
-    # 我们需要构建一个更适合日志分析的 system_instruction 和 user prompt
+    # 日志分析的 system_instruction 和 user prompt
     # 对于 generativelanguage.googleapis.com, 使用 system_instruction
     system_instruction_text = (
         "你是一个专业的网络安全分析师，专门分析 Nginx 和 PHP 日志以检测潜在的入侵或恶意活动。"
@@ -72,8 +71,25 @@ def call_gemini_api(log_data_str, proxies=None):
         "确保返回的是一个有效的 JSON 对象。"
     )
 
+    # 动态调整 maxOutputTokens
+    # 目标设为 8192，除非配置中已设置更高且合理的值
+    configured_max_tokens = getattr(config, 'GEMINI_MAX_OUTPUT_TOKENS', 2048) # 默认2048以防万一未配置
+    target_max_output_tokens = 8192
+
+    if configured_max_tokens > target_max_output_tokens and configured_max_tokens <= 8192: # 如果配置值在合理范围内且大于我们的目标
+        effective_max_output_tokens = configured_max_tokens
+    else:
+        effective_max_output_tokens = target_max_output_tokens
+        if configured_max_tokens < target_max_output_tokens:
+             print(f"提示: config.GEMINI_MAX_OUTPUT_TOKENS ({configured_max_tokens}) 较小。")
+             print(f"       本次调用将使用 {effective_max_output_tokens} 作为 maxOutputTokens 以尝试获取完整响应。")
+        elif configured_max_tokens > 8192: # 如果配置值过大
+            print(f"警告: config.GEMINI_MAX_OUTPUT_TOKENS ({configured_max_tokens}) 可能超过模型支持的上限。")
+            print(f"       本次调用将使用 {effective_max_output_tokens} 作为 maxOutputTokens。")
+
+
     payload = {
-        "system_instruction": { # Vertex AI 使用 systemInstruction, generativelanguage 使用 system_instruction
+        "system_instruction": {
             "parts": [{"text": system_instruction_text}]
         },
         "contents": [
@@ -83,10 +99,10 @@ def call_gemini_api(log_data_str, proxies=None):
             }
         ],
         "generationConfig": {
-            "responseMimeType": config.GEMINI_RESPONSE_MIME_TYPE, # generativelanguage 使用 responseMimeType
-            "maxOutputTokens": config.GEMINI_MAX_OUTPUT_TOKENS # generativelanguage 使用 maxOutputTokens
+            "responseMimeType": config.GEMINI_RESPONSE_MIME_TYPE,
+            "maxOutputTokens": effective_max_output_tokens
         },
-        "safetySettings": [ # 安全设置结构相同
+        "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -98,39 +114,55 @@ def call_gemini_api(log_data_str, proxies=None):
         # 在发送请求前记录
         if config.LOG_GEMINI_API_CALLS:
             _log_api_call(request_payload=payload)
-        response = requests.post(api_url_with_key, headers=headers, json=payload, timeout=120, proxies=proxies) # 使用带 key 的 URL 和代理
-        response.raise_for_status()  # 如果请求失败 (状态码 4xx or 5xx), 会抛出 HTTPError
+        response = requests.post(api_url_with_key, headers=headers, json=payload, timeout=180, proxies=proxies) # 增加超时时间
+        response.raise_for_status()
         
-        # 尝试解析 JSON 响应
         response_json = response.json()
 
-        # 从响应中提取模型生成的文本内容
-        # 根据 PRD 的响应结构，内容在 candidates[0].content.parts[0].text
-        if (response_json.get("candidates") and
-            len(response_json["candidates"]) > 0 and
-            response_json["candidates"][0].get("content") and
-            response_json["candidates"][0]["content"].get("parts") and
-            len(response_json["candidates"][0]["content"]["parts"]) > 0 and
-            response_json["candidates"][0]["content"]["parts"][0].get("text")):
+        # 检查是否有候选内容以及 finishReason
+        if not response_json.get("candidates") or not response_json["candidates"]:
+            error_msg = f"Gemini API 响应中缺少 'candidates'。响应: {response_json}"
+            print(error_msg)
+            error_detail = {"error": "Missing 'candidates' in API response", "raw_response": response_json}
+            if config.LOG_GEMINI_API_CALLS:
+                _log_api_call(request_payload=payload, response_data=response_json, error_message=error_msg)
+            return error_detail
+
+        candidate = response_json["candidates"][0]
+        finish_reason = candidate.get("finishReason")
+
+        if (candidate.get("content") and
+            candidate["content"].get("parts") and
+            len(candidate["content"]["parts"]) > 0 and
+            candidate["content"]["parts"][0].get("text")):
             
-            model_output_text = response_json["candidates"][0]["content"]["parts"][0]["text"]
-            # 尝试将模型输出的文本再次解析为 JSON
+            model_output_text = candidate["content"]["parts"][0]["text"]
             try:
                 parsed_model_output = json.loads(model_output_text)
                 if config.LOG_GEMINI_API_CALLS:
                     _log_api_call(request_payload=payload, response_data={"parsed_model_output": parsed_model_output, "raw_api_response": response_json})
+                # 如果因为MAX_TOKENS完成，也附加一个警告
+                if finish_reason == "MAX_TOKENS":
+                    parsed_model_output["warning_finish_reason"] = "MAX_TOKENS: Response might be truncated."
                 return parsed_model_output
             except json.JSONDecodeError as e:
                 error_msg = f"Gemini API 返回的文本不是有效的 JSON 格式: {model_output_text}. Error: {e}"
                 print(error_msg)
-                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text}
+                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text, "finish_reason": finish_reason}
                 if config.LOG_GEMINI_API_CALLS:
                     _log_api_call(request_payload=payload, response_data={"raw_api_response": response_json, "model_text_output": model_output_text}, error_message=error_msg)
                 return error_detail
-        else:
-            error_msg = f"Gemini API 响应结构不符合预期: {response_json}"
+        elif finish_reason == "MAX_TOKENS":
+            error_msg = f"Gemini API 响应因 MAX_TOKENS 而截断，且未能提取有效文本内容。响应: {response_json}"
             print(error_msg)
-            error_detail = {"error": "Unexpected API response structure", "raw_response": response_json}
+            error_detail = {"error": "Response truncated due to MAX_TOKENS and no text content found", "raw_response": response_json, "finish_reason": finish_reason}
+            if config.LOG_GEMINI_API_CALLS:
+                _log_api_call(request_payload=payload, response_data=response_json, error_message=error_msg)
+            return error_detail
+        else:
+            error_msg = f"Gemini API 响应结构不符合预期或缺少文本内容。Finish reason: {finish_reason}. 响应: {response_json}"
+            print(error_msg)
+            error_detail = {"error": "Unexpected API response structure or missing text", "raw_response": response_json, "finish_reason": finish_reason}
             if config.LOG_GEMINI_API_CALLS:
                 _log_api_call(request_payload=payload, response_data=response_json, error_message=error_msg)
             return error_detail

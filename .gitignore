@@ -1,3 +1,5 @@
 PRD.md
 test_gemini_api.py
 /__pycache__
+access.log
+test_access_log_analyzer.py
