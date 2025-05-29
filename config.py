@@ -22,3 +22,9 @@ REPORT_HTML_PATH = "/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/report.htm
 
 # 检测频率（秒）
 SCAN_INTERVAL_SECONDS = 60
+
+# 是否记录 Gemini API 请求和响应
+LOG_GEMINI_API_CALLS = True
+
+# Gemini API 请求和响应的日志路径
+GEMINI_API_LOG_PATH = "/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/gemini_api_log.json"

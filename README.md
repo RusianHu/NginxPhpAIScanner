@@ -10,10 +10,9 @@ NginxPhpAIScanner 是一个 Python 服务，旨在通过分析 Nginx 和 PHP-FPM
 
 *   **定时日志扫描**：定期（默认为每分钟）读取 Nginx 访问日志、Nginx 错误日志和 PHP-FPM 错误日志的最新内容（默认为最新的500行）。
 *   **AI 驱动的威胁分析**：利用 Gemini AI 模型 (`gemini-2.5-flash-preview-05-20`) 对收集到的日志数据进行深度分析，识别潜在安全风险。
-*   **结构化结果输出**：AI 模型被配置为返回结构化的 JSON 数据，包含发现的威胁等级、描述、建议措施以及相关的原始日志行。
 *   **动态 HTML 报告**：将分析结果（包括错误信息和正常状态）动态更新到用户指定的静态 HTML 报告页面。报告页面包含时间戳、日志类型、详细发现和总体摘要。
-*   **高度可配置**：通过 [`config.py`](config.py:0) 文件，用户可以轻松配置 API 密钥、项目 ID、日志文件路径、扫描行数、扫描频率、报告路径以及 Gemini API 相关参数。
 *   **错误处理**：对配置文件缺失、API 密钥无效、日志文件不可读、API 调用失败等多种异常情况进行了处理，并将相关错误信息记录到控制台和 HTML 报告中。
+*   **Gemini API 调用记录** (可选)：可以配置记录所有对 Gemini API 的请求和响应（或错误）到指定的 JSON Lines 文件中，方便调试和审计。此功能默认为开启。
 
 ## 技术栈
 
@@ -81,6 +80,8 @@ NginxPhpAIScanner 是一个 Python 服务，旨在通过分析 Nginx 和 PHP-FPM
     *   `LOG_LINES_TO_READ` ([`config.py:12`](config.py:12)): 每次扫描读取的日志行数。
     *   `SCAN_INTERVAL_SECONDS` ([`config.py:24`](config.py:24)): 日志扫描的频率（秒）。
     *   `GEMINI_MAX_OUTPUT_TOKENS` ([`config.py:17`](config.py:17)): Gemini API 返回的最大 token 数。
+    *   `LOG_GEMINI_API_CALLS` ([`config.py:26`](config.py:26)): 布尔值，控制是否记录 Gemini API 的调用。默认为 `True` (开启)。
+    *   `GEMINI_API_LOG_PATH` ([`config.py:29`](config.py:29)): 字符串，指定 Gemini API 调用日志文件的路径。默认为报告 HTML 文件所在目录下的 `gemini_api_log.json`。
 
 ## 运行服务
 
