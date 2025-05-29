@@ -32,3 +32,19 @@ GEMINI_API_LOG_PATH = "/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/gemini_
 # 此功能目前主要适用于使用 systemd 的 Linux 系统 (如 Ubuntu 15.04+, Debian 8+, CentOS 7+ 等)。
 # 如果在其他系统上运行或不希望进行此检测，可以将其设置为 False。
 ENABLE_NGINX_STATUS_CHECK = False
+
+# 代理服务器配置 (可选)
+# 如果您的服务器需要通过代理访问外部网络 (例如 Google API)，请在此处配置。
+# 将下面的 "your_proxy_address" 和 "port" 替换为您的实际代理服务器地址和端口。
+# 如果代理需要认证，格式通常是 "http://user:password@your_proxy_address:port"
+PROXIES = None
+# 示例:
+# PROXIES = {
+#    "http": "http://127.0.0.1:7890",  # 替换为您的 HTTP 代理
+#    "https": "http://127.0.0.1:7890", # 替换为您的 HTTPS 代理
+# }
+# 或者使用 SOCKS5 代理 (需要 pip install requests[socks])
+# PROXIES = {
+#    "http": "socks5h://127.0.0.1:1080", # socks5h 表示通过代理进行 DNS 解析
+#    "https": "socks5h://127.0.0.1:1080",
+# }

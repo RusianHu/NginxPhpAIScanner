@@ -215,6 +215,12 @@ graph LR
 python main.py
 ```
 
+如遇到网络问题，可先测试 Gemini API 是否联通：
+
+```bash
+ping -c 5 generativelanguage.googleapis.com
+```
+
 服务启动后会开始周期性地扫描日志并更新 HTML 报告。您可以通过控制台输出查看服务的运行状态和基本日志。
 要停止服务，请按 `Ctrl+C`。
 

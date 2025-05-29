@@ -1,6 +1,7 @@
 # gemini_client.py
 import requests
 import json
+import time # 新增 time 模块用于重试间隔
 import config # 假设 config.py 仍然在根目录，并且 gemini_client.py 需要访问它
 import datetime
 import os
@@ -111,13 +112,60 @@ def call_gemini_api(log_data_str, proxies=None):
     }
 
     try:
-        # 在发送请求前记录
-        if config.LOG_GEMINI_API_CALLS:
-            _log_api_call(request_payload=payload)
-        response = requests.post(api_url_with_key, headers=headers, json=payload, timeout=180, proxies=proxies) # 增加超时时间
-        response.raise_for_status()
-        
-        response_json = response.json()
+        # 定义重试参数
+        max_retries = 3
+        retry_delay_seconds = 5 # 每次重试前等待的秒数
+        connect_timeout = 30  # 连接超时时间（秒）
+        read_timeout = 120    # 读取超时时间（秒）
+
+        for attempt in range(max_retries):
+            try:
+                # 在发送请求前记录 (每次尝试都记录)
+                if config.LOG_GEMINI_API_CALLS:
+                    _log_api_call(request_payload=payload) # 注意：如果重试，这会记录多次请求体
+
+                print(f"尝试调用 Gemini API (第 {attempt + 1}/{max_retries} 次)...")
+                response = requests.post(
+                    api_url_with_key,
+                    headers=headers,
+                    json=payload,
+                    timeout=(connect_timeout, read_timeout), # 使用元组设置连接和读取超时
+                    proxies=proxies
+                )
+                response.raise_for_status() # 如果状态码是 4xx 或 5xx，则抛出 HTTPError
+                
+                response_json = response.json()
+                # 如果请求成功，跳出重试循环
+                break
+            except requests.exceptions.Timeout as e:
+                error_msg = f"调用 Gemini API 时发生超时 (尝试 {attempt + 1}/{max_retries}): {e}"
+                print(error_msg)
+                if config.LOG_GEMINI_API_CALLS:
+                    # 为特定尝试记录错误
+                    _log_api_call(request_payload=payload, error_message=f"Attempt {attempt + 1} Timeout: {e}")
+                if attempt < max_retries - 1:
+                    print(f"{retry_delay_seconds} 秒后重试...")
+                    time.sleep(retry_delay_seconds)
+                else:
+                    print("已达到最大重试次数，放弃。")
+                    return {"error": f"API request failed after {max_retries} attempts due to timeout: {e}"}
+            except requests.exceptions.RequestException as e: # 其他网络相关错误
+                error_msg = f"调用 Gemini API 时发生网络错误 (尝试 {attempt + 1}/{max_retries}): {e}"
+                print(error_msg)
+                if config.LOG_GEMINI_API_CALLS:
+                     _log_api_call(request_payload=payload, error_message=f"Attempt {attempt + 1} RequestException: {e}")
+                if attempt < max_retries - 1:
+                    # 对于某些错误 (例如 DNS 解析失败), 立即重试可能没有意义，但这里为了简单统一处理
+                    print(f"{retry_delay_seconds} 秒后重试...")
+                    time.sleep(retry_delay_seconds)
+                else:
+                    print("已达到最大重试次数，放弃。")
+                    return {"error": f"API request failed after {max_retries} attempts: {e}"}
+        else:
+            # 如果循环正常结束 (例如 break 未执行，理论上不应该到这里，因为上面已经 return 了)
+            # 但作为保险，如果循环结束而 response 未定义
+            return {"error": "API request failed after all retries without a definitive success or specific error."}
+
 
         # 检查是否有候选内容以及 finishReason
         if not response_json.get("candidates") or not response_json["candidates"]:
@@ -166,15 +214,16 @@ def call_gemini_api(log_data_str, proxies=None):
             if config.LOG_GEMINI_API_CALLS:
                 _log_api_call(request_payload=payload, response_data=response_json, error_message=error_msg)
             return error_detail
-    except requests.exceptions.RequestException as e:
-        error_msg = f"调用 Gemini API 时发生网络错误: {e}"
-        print(error_msg)
-        if config.LOG_GEMINI_API_CALLS:
-            _log_api_call(request_payload=payload, error_message=error_msg)
-        return {"error": f"API request failed: {e}"}
+    # except requests.exceptions.RequestException as e: # 这个异常现在在重试循环中处理
+    #     error_msg = f"调用 Gemini API 时发生网络错误: {e}"
+    #     print(error_msg)
+    #     if config.LOG_GEMINI_API_CALLS:
+    #         _log_api_call(request_payload=payload, error_message=error_msg)
+    #     return {"error": f"API request failed: {e}"}
     except json.JSONDecodeError as e: # 这个 catch 对应 response.json() 的解析错误
         raw_response_text = "Unknown (response object not available or text attribute missing)"
-        if 'response' in locals() and hasattr(response, 'text'):
+        # 确保 response 对象存在且有 text 属性
+        if 'response' in locals() and response is not None and hasattr(response, 'text'):
             raw_response_text = response.text
         error_msg = f"Gemini API 响应不是有效的 JSON 格式。响应内容: {raw_response_text}. Error: {e}"
         print(error_msg)

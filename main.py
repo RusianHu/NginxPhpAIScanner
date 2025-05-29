@@ -339,6 +339,57 @@ def is_nginx_running():
         print(f"检查 Nginx 状态时发生未知错误: {e}")
         return False
 
+def perform_scan_and_update_report(proxies=None):
+    """执行一次完整的日志扫描、分析和报告更新。"""
+    print(f"\n[{datetime.now().isoformat()}] 开始新一轮日志检测...")
+    all_analysis_results_for_this_run = []
+
+    log_files_to_scan = {
+        "nginx_access": config.NGINX_ACCESS_LOG_PATH,
+        "nginx_error": config.NGINX_ERROR_LOG_PATH,
+        "php_fpm": config.PHP_FPM_LOG_PATH,
+    }
+
+    for log_type, log_path in log_files_to_scan.items():
+        print(f"正在读取 {log_type} 日志: {log_path}")
+        latest_lines = read_latest_log_lines(log_path, config.LOG_LINES_TO_READ)
+
+        if not latest_lines:
+            print(f"{log_type} 日志为空或读取失败，跳过分析。")
+            empty_log_result = {
+                "timestamp": datetime.now().isoformat(),
+                "log_type": log_type,
+                "findings": [],
+                "summary": f"日志文件 {log_path} 为空或无法读取。"
+            }
+            all_analysis_results_for_this_run.append(empty_log_result)
+            continue
+
+        log_data_str = "".join(latest_lines)
+        print(f"准备调用 Gemini API 分析 {log_type} 日志 ({len(latest_lines)} 行)...")
+        
+        analysis_result = call_gemini_api(log_data_str, proxies=proxies)
+
+        if analysis_result:
+            analysis_result.setdefault("log_type", log_type)
+            analysis_result.setdefault("timestamp", datetime.now().isoformat())
+            all_analysis_results_for_this_run.append(analysis_result)
+            print(f"Gemini API 对 {log_type} 日志分析完成。")
+        else:
+            print(f"Gemini API 对 {log_type} 日志分析失败。")
+            error_result = {
+                "timestamp": datetime.now().isoformat(),
+                "log_type": log_type,
+                "error": "API call returned no result or an unrecoverable error.",
+                "summary": "无法从Gemini API获取分析结果。"
+            }
+            all_analysis_results_for_this_run.append(error_result)
+    
+    if all_analysis_results_for_this_run:
+        update_report_html(all_analysis_results_for_this_run)
+    else:
+        print("本轮没有日志数据被分析，不更新报告。")
+
 def main_scan_loop():
     """主扫描循环"""
     if config.ENABLE_NGINX_STATUS_CHECK:
@@ -346,19 +397,15 @@ def main_scan_loop():
         if not is_nginx_running():
             print("Nginx 服务未运行或未正确监听端口。请检查 Nginx 配置和状态。")
             print("安全检测服务将退出。")
-            # 可以在这里添加错误信息到HTML报告
             error_report_nginx = [{
                 "timestamp": datetime.now().isoformat(),
                 "log_type": "system_check",
                 "error": "Nginx 服务未运行或未正确监听端口。",
                 "summary": "无法启动安全扫描，因为依赖的 Nginx 服务存在问题。"
             }]
-            # 尝试更新报告，即使服务未启动，也记录下这个问题
-            # 确保 REPORT_HTML_PATH 已定义，否则 update_report_html 可能会失败
             if hasattr(config, 'REPORT_HTML_PATH') and config.REPORT_HTML_PATH:
-                 # 首次运行时，如果报告文件不存在，先创建一个空的报告结构
                 if not os.path.exists(config.REPORT_HTML_PATH):
-                    update_report_html([]) # 创建基础HTML
+                    update_report_html([])
                 update_report_html(error_report_nginx)
             else:
                 print("错误：REPORT_HTML_PATH 未在 config.py 中配置，无法记录 Nginx 状态错误到报告。")
@@ -367,68 +414,25 @@ def main_scan_loop():
     else:
         print("Nginx 启动状态检测已禁用 (根据配置 ENABLE_NGINX_STATUS_CHECK=False)。")
 
-    print(f"Nginx PHP AI 安全检测服务启动，每 {config.SCAN_INTERVAL_SECONDS} 秒检测一次。")
+    print(f"Nginx PHP AI 安全检测服务启动。")
     
     # 首次运行时，如果报告文件不存在，先创建一个空的报告结构
+    # 或者即使用户清空了报告，也重新创建基础结构
     if not os.path.exists(config.REPORT_HTML_PATH):
-        update_report_html([]) # 传入空列表以创建基础HTML结构
+        print("报告文件不存在，正在创建初始报告结构...")
+        update_report_html([])
+    
+    # 首次启动时立即执行一次扫描
+    print("执行首次即时扫描...")
+    current_proxies = getattr(config, "PROXIES", None)
+    perform_scan_and_update_report(proxies=current_proxies)
+    print(f"首次扫描完成。后续将每 {config.SCAN_INTERVAL_SECONDS} 秒检测一次。")
 
     while True:
-        print(f"\n[{datetime.now().isoformat()}] 开始新一轮日志检测...")
-        all_analysis_results_for_this_run = []
-
-        log_files_to_scan = {
-            "nginx_access": config.NGINX_ACCESS_LOG_PATH,
-            "nginx_error": config.NGINX_ERROR_LOG_PATH,
-            "php_fpm": config.PHP_FPM_LOG_PATH,
-        }
-
-        for log_type, log_path in log_files_to_scan.items():
-            print(f"正在读取 {log_type} 日志: {log_path}")
-            latest_lines = read_latest_log_lines(log_path, config.LOG_LINES_TO_READ)
-
-            if not latest_lines:
-                print(f"{log_type} 日志为空或读取失败，跳过分析。")
-                # 即使日志为空，也为报告生成一个条目
-                empty_log_result = {
-                    "timestamp": datetime.now().isoformat(),
-                    "log_type": log_type,
-                    "findings": [],
-                    "summary": f"日志文件 {log_path} 为空或无法读取。"
-                }
-                all_analysis_results_for_this_run.append(empty_log_result)
-                continue
-
-            log_data_str = "".join(latest_lines)
-            print(f"准备调用 Gemini API 分析 {log_type} 日志 ({len(latest_lines)} 行)...")
-            
-            analysis_result = call_gemini_api(log_data_str)
-
-            if analysis_result:
-                # 确保结果中包含 log_type 和 timestamp，即使API调用失败
-                analysis_result.setdefault("log_type", log_type)
-                analysis_result.setdefault("timestamp", datetime.now().isoformat())
-                all_analysis_results_for_this_run.append(analysis_result)
-                print(f"Gemini API 对 {log_type} 日志分析完成。")
-                # print(json.dumps(analysis_result, indent=2, ensure_ascii=False)) # 调试输出
-            else:
-                print(f"Gemini API 对 {log_type} 日志分析失败。")
-                # API 调用彻底失败时，也记录一个错误条目
-                error_result = {
-                    "timestamp": datetime.now().isoformat(),
-                    "log_type": log_type,
-                    "error": "API call returned no result or an unrecoverable error.",
-                    "summary": "无法从Gemini API获取分析结果。"
-                }
-                all_analysis_results_for_this_run.append(error_result)
-        
-        if all_analysis_results_for_this_run:
-            update_report_html(all_analysis_results_for_this_run)
-        else:
-            print("本轮没有日志数据被分析，不更新报告。")
-
-        print(f"本轮检测完成，等待 {config.SCAN_INTERVAL_SECONDS} 秒...")
+        print(f"等待 {config.SCAN_INTERVAL_SECONDS} 秒进行下一次检测...")
         time.sleep(config.SCAN_INTERVAL_SECONDS)
+        perform_scan_and_update_report(proxies=current_proxies)
+        print(f"本轮检测完成。")
 
 if __name__ == "__main__":
     # 确保必要的配置存在
