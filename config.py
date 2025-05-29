@@ -21,10 +21,15 @@ GEMINI_RESPONSE_MIME_TYPE = "application/json"
 REPORT_HTML_PATH = "/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/report.html"
 
 # 检测频率（秒）
-SCAN_INTERVAL_SECONDS = 60
+SCAN_INTERVAL_SECONDS = 300
 
 # 是否记录 Gemini API 请求和响应
 LOG_GEMINI_API_CALLS = True
 
 # Gemini API 请求和响应的日志路径
 GEMINI_API_LOG_PATH = "/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/gemini_api_log.json"
+
+# 是否启用 Nginx 启动状态检测 (默认为 False)
+# 此功能目前主要适用于使用 systemd 的 Linux 系统 (如 Ubuntu 15.04+, Debian 8+, CentOS 7+ 等)。
+# 如果在其他系统上运行或不希望进行此检测，可以将其设置为 False。
+ENABLE_NGINX_STATUS_CHECK = False

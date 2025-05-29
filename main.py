@@ -2,6 +2,7 @@
 import time
 import json
 import os
+import subprocess # 用于执行外部命令
 # import requests # requests 已移至 gemini_client.py
 from datetime import datetime
 
@@ -290,9 +291,77 @@ def update_report_html(analysis_results):
     except Exception as e:
         print(f"写入报告 {config.REPORT_HTML_PATH} 失败: {e}")
 
+def is_nginx_running():
+    """检查 Nginx 服务是否正在运行并监听端口"""
+    try:
+        # 检查 systemd 服务状态
+        active_check = subprocess.run(['systemctl', 'is-active', 'nginx'], capture_output=True, text=True, check=False)
+        if active_check.stdout.strip() != "active":
+            print(f"Nginx 服务状态不是 'active': {active_check.stdout.strip()}")
+            # 即使 systemctl is-active 不是 active，也继续检查端口，因为 'active (exited)' 状态也可能发生
+            # return False
+
+        # 检查 Nginx 是否在监听端口 (通常是 80 或 443)
+        # 优先使用 ss，如果不存在则尝试 netstat
+        try:
+            listen_check = subprocess.run(['ss', '-tlpn'], capture_output=True, text=True, check=True)
+        except FileNotFoundError:
+            print("未找到 'ss' 命令，尝试使用 'netstat'...")
+            try:
+                listen_check = subprocess.run(['netstat', '-tlpn'], capture_output=True, text=True, check=True)
+            except FileNotFoundError:
+                print("错误：未找到 'ss' 或 'netstat' 命令，无法检查 Nginx 监听端口。")
+                return False # 无法确认，保守处理
+        
+        if 'nginx' in listen_check.stdout:
+            print("Nginx 正在运行并监听端口。")
+            return True
+        else:
+            print("Nginx 可能已启动 (systemctl is-active)，但未检测到其监听任何端口。")
+            print("ss/netstat output:\n", listen_check.stdout)
+            return False
+
+    except subprocess.CalledProcessError as e:
+        print(f"执行命令检查 Nginx 状态时出错: {e}")
+        if e.stderr:
+            print(f"错误输出: {e.stderr}")
+        return False
+    except FileNotFoundError:
+        print("错误：未找到 'systemctl' 命令。此脚本可能未在支持 systemd 的系统上运行，或者 systemctl 不在 PATH 中。")
+        # 在这种情况下，可以考虑其他检查方法或让用户配置
+        return False # 无法确认，保守处理
+    except Exception as e:
+        print(f"检查 Nginx 状态时发生未知错误: {e}")
+        return False
 
 def main_scan_loop():
     """主扫描循环"""
+    if config.ENABLE_NGINX_STATUS_CHECK:
+        print("正在检查 Nginx 服务状态 (根据配置 ENABLE_NGINX_STATUS_CHECK=True)...")
+        if not is_nginx_running():
+            print("Nginx 服务未运行或未正确监听端口。请检查 Nginx 配置和状态。")
+            print("安全检测服务将退出。")
+            # 可以在这里添加错误信息到HTML报告
+            error_report_nginx = [{
+                "timestamp": datetime.now().isoformat(),
+                "log_type": "system_check",
+                "error": "Nginx 服务未运行或未正确监听端口。",
+                "summary": "无法启动安全扫描，因为依赖的 Nginx 服务存在问题。"
+            }]
+            # 尝试更新报告，即使服务未启动，也记录下这个问题
+            # 确保 REPORT_HTML_PATH 已定义，否则 update_report_html 可能会失败
+            if hasattr(config, 'REPORT_HTML_PATH') and config.REPORT_HTML_PATH:
+                 # 首次运行时，如果报告文件不存在，先创建一个空的报告结构
+                if not os.path.exists(config.REPORT_HTML_PATH):
+                    update_report_html([]) # 创建基础HTML
+                update_report_html(error_report_nginx)
+            else:
+                print("错误：REPORT_HTML_PATH 未在 config.py 中配置，无法记录 Nginx 状态错误到报告。")
+            exit()
+        print("Nginx 服务状态正常。")
+    else:
+        print("Nginx 启动状态检测已禁用 (根据配置 ENABLE_NGINX_STATUS_CHECK=False)。")
+
     print(f"Nginx PHP AI 安全检测服务启动，每 {config.SCAN_INTERVAL_SECONDS} 秒检测一次。")
     
     # 首次运行时，如果报告文件不存在，先创建一个空的报告结构
@@ -367,7 +436,10 @@ if __name__ == "__main__":
         "REPORT_HTML_PATH": getattr(config, "REPORT_HTML_PATH", None),
         "LOG_LINES_TO_READ": getattr(config, "LOG_LINES_TO_READ", 0),
         "SCAN_INTERVAL_SECONDS": getattr(config, "SCAN_INTERVAL_SECONDS", 0),
+        "ENABLE_NGINX_STATUS_CHECK": getattr(config, "ENABLE_NGINX_STATUS_CHECK", True), # 添加新的配置项检查，默认为True
     }
+    # 打印 Nginx 状态检测的配置状态
+    print(f"配置加载：Nginx 状态检测已 {'启用' if required_configs['ENABLE_NGINX_STATUS_CHECK'] else '禁用'} (通过 ENABLE_NGINX_STATUS_CHECK 配置)。")
 
     missing_configs = False
     if required_configs["GEMINI_API_KEY"] == "YOUR_GEMINI_API_KEY":
