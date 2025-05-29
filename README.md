@@ -1,0 +1,123 @@
+# Nginx PHP AI 安全检测服务 (NginxPhpAIScanner)
+
+[![GitHub Repo](https://img.shields.io/badge/GitHub-NginxPhpAIScanner-blue?logo=github)](https://github.com/RusianHu/NginxPhpAIScanner) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Project Status: WIP](https://img.shields.io/badge/repo%20status-WIP-green.svg)](https://github.com/RusianHu/NginxPhpAIScanner)
+
+## 项目概述
+
+NginxPhpAIScanner 是一个 Python 服务，旨在通过分析 Nginx 和 PHP-FPM 的日志文件，利用 Google Gemini AI 模型来自动检测潜在的安全威胁、入侵尝试或恶意活动。服务会定期扫描指定的日志文件，将分析结果生成并更新到一个静态的 HTML 报告页面，方便管理员监控服务器安全状态。
+
+## 功能特性
+
+*   **定时日志扫描**：定期（默认为每分钟）读取 Nginx 访问日志、Nginx 错误日志和 PHP-FPM 错误日志的最新内容（默认为最新的500行）。
+*   **AI 驱动的威胁分析**：利用 Gemini AI 模型 (`gemini-2.5-flash-preview-05-20`) 对收集到的日志数据进行深度分析，识别潜在安全风险。
+*   **结构化结果输出**：AI 模型被配置为返回结构化的 JSON 数据，包含发现的威胁等级、描述、建议措施以及相关的原始日志行。
+*   **动态 HTML 报告**：将分析结果（包括错误信息和正常状态）动态更新到用户指定的静态 HTML 报告页面。报告页面包含时间戳、日志类型、详细发现和总体摘要。
+*   **高度可配置**：通过 [`config.py`](config.py:0) 文件，用户可以轻松配置 API 密钥、项目 ID、日志文件路径、扫描行数、扫描频率、报告路径以及 Gemini API 相关参数。
+*   **错误处理**：对配置文件缺失、API 密钥无效、日志文件不可读、API 调用失败等多种异常情况进行了处理，并将相关错误信息记录到控制台和 HTML 报告中。
+
+## 技术栈
+
+*   **Python 3** (PRD 建议 3.13, 代码具有良好兼容性)
+*   **Google Gemini API**: 用于日志内容的智能分析。
+*   **Requests**: 用于与 Gemini API 进行 HTTP 通信。
+
+## 文件结构
+
+所有项目文件均位于根目录下：
+
+```
+.
+├── config.py           # 配置文件，包含所有可调参数
+├── gemini_client.py    # 封装与 Gemini API 交互的客户端逻辑
+├── LICENSE             # 项目许可证文件 (MIT)
+├── main.py             # 主程序入口，负责调度和报告生成
+├── PRD.md              # 产品需求文档
+├── README.md           # 本文件
+└── requirements.txt    # Python 依赖包列表
+```
+
+## 安装与环境准备
+
+1.  **克隆项目**：
+    通过 Git 从 GitHub 克隆项目仓库：
+    ```bash
+    git clone https://github.com/RusianHu/NginxPhpAIScanner.git
+    ```
+    然后进入项目目录：
+    ```bash
+    cd NginxPhpAIScanner
+    ```
+    或者，您也可以直接从 GitHub 下载项目的 ZIP 文件并解压。
+
+2.  **Python 环境**：
+    确保您已安装 Python 3 (建议 3.8 或更高版本)。
+
+3.  **安装依赖**：
+    在项目根目录下，通过 pip 安装所需的库：
+    ```bash
+    pip install -r requirements.txt
+    ```
+    (如果您在中国国内环境遇到下载速度问题，可以尝试使用 pip 镜像源，例如： `pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`)
+
+## 配置
+
+在运行服务之前，您必须正确配置 [`config.py`](config.py:0) 文件：
+
+1.  **Gemini API Key 和 Project ID**：
+    *   `GEMINI_API_KEY`: 替换 `"YOUR_GEMINI_API_KEY"` ([`config.py:4`](config.py:4)) 为您真实的 Google Gemini API 密钥。
+    *   `GEMINI_API_URL`: 替换 URL 中的 `"YOUR_PROJECT_ID"` ([`config.py:15`](config.py:15)) 为您的 Google Cloud 项目 ID。
+
+2.  **日志文件路径**：
+    根据您服务器的实际情况，检查并修改以下路径：
+    *   `NGINX_ACCESS_LOG_PATH` ([`config.py:7`](config.py:7))
+    *   `NGINX_ERROR_LOG_PATH` ([`config.py:8`](config.py:8))
+    *   `PHP_FPM_LOG_PATH` ([`config.py:9`](config.py:9))
+    确保运行脚本的用户对这些日志文件有读取权限。
+
+3.  **报告 HTML 路径**：
+    *   `REPORT_HTML_PATH` ([`config.py:21`](config.py:21)): 指定生成的 HTML 报告的完整路径。确保运行脚本的用户对该路径的父目录有写入权限。
+
+4.  **其他参数 (可选调整)**：
+    *   `LOG_LINES_TO_READ` ([`config.py:12`](config.py:12)): 每次扫描读取的日志行数。
+    *   `SCAN_INTERVAL_SECONDS` ([`config.py:24`](config.py:24)): 日志扫描的频率（秒）。
+    *   `GEMINI_MAX_OUTPUT_TOKENS` ([`config.py:17`](config.py:17)): Gemini API 返回的最大 token 数。
+
+## 运行服务
+
+完成配置后，在项目根目录下运行主程序：
+
+```bash
+python main.py
+```
+
+服务启动后会开始周期性地扫描日志并更新 HTML 报告。您可以通过控制台输出查看服务的运行状态和基本日志。
+要停止服务，请按 `Ctrl+C`。
+
+## 访问报告
+
+生成的 HTML 报告位于您在 [`config.py`](config.py:21) 中 `REPORT_HTML_PATH` 指定的路径 (`/www/wwwroot/yanshanlaosiji.top/NginxPhpAIScanner/report.html`)。
+您可以通过 Web 服务器配置该路径以便通过浏览器访问。
+
+**重要安全提示：** 强烈建议您使用 Nginx 的访问控制模块（如 `ngx_http_auth_basic_module`）来保护此报告页面，设置用户名和密码访问，以防止未授权访问敏感的安全分析结果。
+
+例如，您可以在 Nginx 配置文件中针对报告路径添加类似如下配置：
+
+```nginx
+location /NginxPhpAIScanner/report.html {
+    auth_basic "Restricted Content";
+    auth_basic_user_file /etc/nginx/.htpasswd; # 指定密码文件路径
+}
+```
+确保已创建 `.htpasswd` 文件并添加了授权用户。
+PRD 中提及的示例报告 URL 为 `https://yanshanlaosiji.top/NginxPhpAIScanner/report.html`。
+
+## 已知问题与待办事项
+
+*   **HTML 报告更新机制**：当前 [`main.py`](main.py:33-291) 中更新现有 HTML 报告的逻辑较为脆弱，依赖精确的字符串替换。未来可以考虑使用模板引擎（如 Jinja2）来提高其鲁棒性。
+*   **进程行为检测缺失**：`PRD.md` ([`PRD.md:10`](PRD.md:10)) 中提到了“进程行为检测”，但当前版本仅实现了日志文件分析。此功能有待后续开发。
+*   **日志轮转适应性**：如果服务器上的日志文件启用了轮转机制，当前固定文件名的读取方式可能需要调整以适应。
+*   **增强日志记录**：可以从当前的 `print` 输出改进为使用 Python 的 `logging` 模块，以实现更灵活和结构化的应用日志记录。
+
+## 许可证
+
+本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
