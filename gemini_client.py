@@ -185,20 +185,50 @@ def call_gemini_api(log_data_str, proxies=None):
             candidate["content"]["parts"][0].get("text")):
             
             model_output_text = candidate["content"]["parts"][0]["text"]
+            
+            # 增强 JSON 清理逻辑，参考 openrouter_client.py
+            cleaned_text = model_output_text.strip()
+
+            # 检查是否被 ```json 和 ``` 包装
+            if cleaned_text.startswith("```json") and cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[7:-3].strip()
+                print("Gemini: 检测到 markdown 'json' 代码块，已清理。")
+            elif cleaned_text.startswith("```") and cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[3:-3].strip()
+                print("Gemini: 检测到无标识 markdown 代码块，已清理。")
+            
+            # 进一步清理可能残余的语言标识符，例如 "json\n{...}"
+            # Gemini 通常不会有这个前缀，但为了稳健性可以保留
+            if cleaned_text.lower().startswith("json"):
+                first_bracket = cleaned_text.find('{')
+                first_square_bracket = cleaned_text.find('[')
+                
+                start_index = -1
+                if first_bracket != -1 and first_square_bracket != -1:
+                    start_index = min(first_bracket, first_square_bracket)
+                elif first_bracket != -1:
+                    start_index = first_bracket
+                elif first_square_bracket != -1:
+                    start_index = first_square_bracket
+                
+                if start_index != -1:
+                    cleaned_text = cleaned_text[start_index:]
+                    print(f"Gemini: 检测到前缀语言标识符，已清理。处理后文本前缀: {cleaned_text[:30]}...")
+
             try:
-                parsed_model_output = json.loads(model_output_text)
+                parsed_model_output = json.loads(cleaned_text)
                 if config.LOG_GEMINI_API_CALLS:
-                    _log_api_call(request_payload=payload, response_data={"parsed_model_output": parsed_model_output, "raw_api_response": response_json})
+                    _log_api_call(request_payload=payload, response_data={"parsed_model_output": parsed_model_output, "raw_api_response": response_json, "original_model_text": model_output_text})
                 # 如果因为MAX_TOKENS完成，也附加一个警告
                 if finish_reason == "MAX_TOKENS":
                     parsed_model_output["warning_finish_reason"] = "MAX_TOKENS: Response might be truncated."
                 return parsed_model_output
             except json.JSONDecodeError as e:
-                error_msg = f"Gemini API 返回的文本不是有效的 JSON 格式: {model_output_text}. Error: {e}"
+                error_msg = f"Gemini API 返回的文本不是有效的 JSON 格式。原始文本: {model_output_text}. 清理后文本: {cleaned_text}. Error: {e}"
                 print(error_msg)
-                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text, "finish_reason": finish_reason}
+                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text, "cleaned_output": cleaned_text, "finish_reason": finish_reason}
                 if config.LOG_GEMINI_API_CALLS:
-                    _log_api_call(request_payload=payload, response_data={"raw_api_response": response_json, "model_text_output": model_output_text}, error_message=error_msg)
+                    _log_api_call(request_payload=payload, response_data={"raw_api_response": response_json, "model_text_output": model_output_text, "cleaned_text": cleaned_text}, error_message=error_msg)
                 return error_detail
         elif finish_reason == "MAX_TOKENS":
             error_msg = f"Gemini API 响应因 MAX_TOKENS 而截断，且未能提取有效文本内容。响应: {response_json}"

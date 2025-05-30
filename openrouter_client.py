@@ -5,6 +5,16 @@ import time
 import config
 import datetime
 import os
+import http.client as http_client
+import logging
+
+# http.client debugging (暂不启用)
+# http_client.HTTPConnection.debuglevel = 1
+# logging.basicConfig()
+# logging.getLogger().setLevel(logging.DEBUG)
+# requests_log = logging.getLogger("requests.packages.urllib3")
+# requests_log.setLevel(logging.DEBUG)
+# requests_log.propagate = True
 
 def _log_api_call(request_payload, response_data=None, error_message=None):
     """以 JSON Lines 格式记录 OpenRouter API 调用到日志文件"""
@@ -50,39 +60,27 @@ def call_openrouter_api(log_data_str, proxies=None):
     headers = {
         "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/RusianHu/NginxPhpAIScanner",  # 可选，用于统计
-        "X-Title": "NginxPhpAIScanner"  # 可选，用于统计
+        "User-Agent": "NginxPhpAIScanner/1.0"  # 尝试使用自定义 User-Agent
     }
 
     # 构建系统提示，与 Gemini 保持一致
-    system_instruction_text = """你是一名专业的网络安全分析师。请分析提供的服务器日志数据，识别潜在的安全威胁、异常行为或恶意活动。
-
-请以 JSON 格式返回分析结果，包含以下字段：
+    system_instruction_text = """You are an AI assistant. The user will provide a Base64 encoded string containing server logs.
+Your first step is to decode this Base64 string to get the plain text server logs.
+Then, analyze these decoded server logs.
+Respond ONLY with a single valid JSON object, structured as follows:
 {
   "findings": [
     {
-      "severity": "high|medium|low|info",
-      "description": "详细描述发现的问题",
-      "recommendation": "建议的处理措施",
-      "log_lines": ["相关的原始日志行"]
+      "severity": "high | medium | low | info",
+      "description": "Description of the issue found in the decoded logs.",
+      "recommendation": "Suggested actions.",
+      "log_lines": ["Relevant original DECODED log lines."]
     }
   ],
-  "summary": "整体分析摘要"
+  "summary": "Summary of the analysis of the DECODED logs."
 }
-
-重点关注：
-1. SQL注入尝试
-2. XSS攻击
-3. 路径遍历攻击
-4. 暴力破解尝试
-5. 异常的用户代理字符串
-6. 可疑的IP地址行为
-7. 错误率异常
-8. PHP错误和警告
-9. 文件上传漏洞利用
-10. 其他安全相关异常
-
-如果没有发现明显的安全问题，请在findings数组中返回空数组[]，并在summary中说明日志看起来正常。"""
+If no issues are found in the decoded logs, "findings" should be an empty array.
+"""
 
     # 构建 OpenRouter API 请求负载
     payload = {
@@ -98,8 +96,7 @@ def call_openrouter_api(log_data_str, proxies=None):
             }
         ],
         "max_tokens": config.OPENROUTER_MAX_OUTPUT_TOKENS,
-        "temperature": 0.1,  # 较低的温度以获得更一致的分析结果
-        "response_format": {"type": "json_object"}  # 强制 JSON 输出
+        "response_format": {"type": "json_object"}  # 恢复强制 JSON 输出
     }
 
     try:
@@ -173,13 +170,32 @@ def call_openrouter_api(log_data_str, proxies=None):
 
             # 检查是否被 ```json 和 ``` 包装
             if cleaned_text.startswith("```json") and cleaned_text.endswith("```"):
-                # 移除 markdown 代码块标记
-                cleaned_text = cleaned_text[7:-3].strip()  # 移除 "```json" 和 "```"
-                print("检测到 markdown 代码块包装的 JSON，已自动清理。")
+                cleaned_text = cleaned_text[7:-3].strip()
+                print("检测到 markdown 'json' 代码块，已清理。")
             elif cleaned_text.startswith("```") and cleaned_text.endswith("```"):
-                # 处理没有语言标识的代码块
-                cleaned_text = cleaned_text[3:-3].strip()  # 移除 "```" 和 "```"
-                print("检测到 markdown 代码块包装的内容，已自动清理。")
+                cleaned_text = cleaned_text[3:-3].strip()
+                print("检测到无标识 markdown 代码块，已清理。")
+            
+            # 进一步清理可能残余的语言标识符，例如 "json\n{...}"
+            if cleaned_text.lower().startswith("json"):
+                # 寻找第一个 '{' 或 '['
+                first_bracket = cleaned_text.find('{')
+                first_square_bracket = cleaned_text.find('[')
+                
+                start_index = -1
+                if first_bracket != -1 and first_square_bracket != -1:
+                    start_index = min(first_bracket, first_square_bracket)
+                elif first_bracket != -1:
+                    start_index = first_bracket
+                elif first_square_bracket != -1:
+                    start_index = first_square_bracket
+                
+                if start_index != -1:
+                    cleaned_text = cleaned_text[start_index:]
+                    print(f"检测到前缀语言标识符，已清理。处理后文本前缀: {cleaned_text[:30]}...")
+                else:
+                    # 如果有 "json" 开头但找不到括号，可能不是有效的json，让后续解析处理
+                    pass
 
             try:
                 parsed_model_output = json.loads(cleaned_text)

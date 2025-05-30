@@ -17,6 +17,12 @@ except ImportError:
     print("错误：找不到 config.py 文件。请确保该文件存在于项目根目录中。")
     exit()
 
+# 确认加载的 OPENROUTER_MODEL 值
+if hasattr(config, "OPENROUTER_MODEL"):
+    print(f"DEBUG: Loaded OPENROUTER_MODEL = {config.OPENROUTER_MODEL}")
+else:
+    print("DEBUG: OPENROUTER_MODEL not found in config.")
+
 def read_latest_log_lines(log_path, num_lines):
     """读取日志文件的最后 N 行"""
     if not os.path.exists(log_path):
@@ -386,11 +392,15 @@ def perform_scan_and_update_report(proxies=None):
             all_analysis_results_for_this_run.append(empty_log_result)
             continue
 
-        log_data_str = "".join(latest_lines)
+        import base64
+        log_data_str_raw = "".join(latest_lines)
+        # 对原始日志字符串进行 Base64 编码
+        log_data_str_b64 = base64.b64encode(log_data_str_raw.encode('utf-8')).decode('utf-8')
+        
         ai_provider = getattr(config, "AI_PROVIDER", "gemini").lower()
-        print(f"准备调用 {ai_provider.upper()} API 分析 {log_type} 日志 ({len(latest_lines)} 行)...")
+        print(f"准备调用 {ai_provider.upper()} API 分析 {log_type} 日志 ({len(latest_lines)} 行, Base64编码后长度: {len(log_data_str_b64)})...")
 
-        analysis_result = call_ai_api(log_data_str, proxies=proxies)
+        analysis_result = call_ai_api(log_data_str_b64, proxies=proxies) # 发送 Base64 编码后的数据
 
         if analysis_result:
             analysis_result.setdefault("log_type", log_type)

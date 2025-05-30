@@ -12,7 +12,8 @@ GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"  # 请替换为你的 Gemini API Key
 # OpenRouter API Key
 OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY"  # 请替换为你的 OpenRouter API Key
 # OpenRouter 模型选择 (可选择的模型请参考 https://openrouter.ai/models)
-OPENROUTER_MODEL = "deepseek/deepseek-chat-v3-0324:free"  # 默认使用 Claude 3.5 Sonnet
+OPENROUTER_MODEL = "deepseek/deepseek-chat-v3-0324:free"
+
 # OpenRouter API 基础 URL
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # OpenRouter 最大输出 tokens
@@ -24,7 +25,7 @@ NGINX_ERROR_LOG_PATH = "/www/wwwlogs/yanshanlaosiji.top.error.log"
 PHP_FPM_LOG_PATH = "/www/server/php/74/var/log/php-fpm.log"
 
 # 每次检测读取的最新日志行数
-LOG_LINES_TO_READ = 500
+LOG_LINES_TO_READ = 50
 
 # ==================== Gemini API 详细配置 ====================
 # Gemini API 与模型相关配置
