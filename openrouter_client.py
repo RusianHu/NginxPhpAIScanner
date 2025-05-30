@@ -60,27 +60,12 @@ def call_openrouter_api(log_data_str, proxies=None):
     headers = {
         "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "User-Agent": "NginxPhpAIScanner/1.0"  # 尝试使用自定义 User-Agent
+        "User-Agent": "NginxPhpAIScanner/1.0",  # 尝试使用自定义 User-Agent
+        "HTTP-Referer": "https://NginxPhpAIScanner.dev", # 添加 Referer
     }
 
     # 构建系统提示，与 Gemini 保持一致
-    system_instruction_text = """You are an AI assistant. The user will provide a Base64 encoded string containing server logs.
-Your first step is to decode this Base64 string to get the plain text server logs.
-Then, analyze these decoded server logs.
-Respond ONLY with a single valid JSON object, structured as follows:
-{
-  "findings": [
-    {
-      "severity": "high | medium | low | info",
-      "description": "Description of the issue found in the decoded logs.",
-      "recommendation": "Suggested actions.",
-      "log_lines": ["Relevant original DECODED log lines."]
-    }
-  ],
-  "summary": "Summary of the analysis of the DECODED logs."
-}
-If no issues are found in the decoded logs, "findings" should be an empty array.
-"""
+    system_instruction_text = """IMPORTANT: Your ONLY output MUST be a single, valid JSON object. Do NOT include any other text, explanations, or markdown. The JSON object should conform to this structure: {"timestamp": "ISO_timestamp", "log_type": "log_type_analyzed", "findings": [{"severity": "high|medium|low|info", "description": "issue_description", "recommendation": "suggested_action", "log_lines": ["relevant_decoded_log_line"]}], "summary": "overall_analysis_summary"}. Analyze the provided Base64 decoded logs for security issues. If no issues are found, 'findings' must be an empty array."""
 
     # 构建 OpenRouter API 请求负载
     payload = {

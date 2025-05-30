@@ -56,21 +56,7 @@ def call_gemini_api(log_data_str, proxies=None):
 
     # 日志分析的 system_instruction 和 user prompt
     # 对于 generativelanguage.googleapis.com, 使用 system_instruction
-    system_instruction_text = (
-        "你是一个专业的网络安全分析师，专门分析 Nginx 和 PHP 日志以检测潜在的入侵或恶意活动。"
-        "请仔细分析提供的日志片段，并以 JSON 格式返回你的分析结果。"
-        "JSON 应包含以下字段："
-        "  - 'timestamp': 分析执行的时间戳 (ISO 8601格式),"
-        "  - 'log_type': 被分析的日志类型 (例如 'nginx_access', 'nginx_error', 'php_fpm'),"
-        "  - 'findings': 一个包含具体发现的列表，每个发现是一个对象，包含："
-        "    - 'severity': 威胁等级 (例如 'critical', 'high', 'medium', 'low', 'info'),"
-        "    - 'description': 对发现的详细描述,"
-        "    - 'recommendation': 针对该发现的建议措施 (可选),"
-        "    - 'log_lines': 相关的原始日志行 (可选，最多5行)"
-        "  - 'summary': 对本次分析的总体摘要。"
-        "如果没有发现异常，'findings' 列表可以为空，并在 'summary' 中说明一切正常。"
-        "确保返回的是一个有效的 JSON 对象。"
-    )
+    system_instruction_text = """Decode the Base64 log data. Analyze the decoded logs for security issues. Respond ONLY with a single, valid JSON object: {"timestamp": "ISO_timestamp", "log_type": "log_type_analyzed", "findings": [{"severity": "high|medium|low|info", "description": "issue_description", "recommendation": "suggested_action", "log_lines": ["relevant_decoded_log_line"]}], "summary": "overall_analysis_summary"}. If no issues are found, 'findings' must be an empty array."""
 
     # 动态调整 maxOutputTokens
     # 目标设为 8192，除非配置中已设置更高且合理的值
