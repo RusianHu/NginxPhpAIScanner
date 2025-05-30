@@ -167,21 +167,35 @@ def call_openrouter_api(log_data_str, proxies=None):
         
         if choice.get("message") and choice["message"].get("content"):
             model_output_text = choice["message"]["content"]
+
+            # 处理可能被 markdown 代码块包装的 JSON 响应
+            cleaned_text = model_output_text.strip()
+
+            # 检查是否被 ```json 和 ``` 包装
+            if cleaned_text.startswith("```json") and cleaned_text.endswith("```"):
+                # 移除 markdown 代码块标记
+                cleaned_text = cleaned_text[7:-3].strip()  # 移除 "```json" 和 "```"
+                print("检测到 markdown 代码块包装的 JSON，已自动清理。")
+            elif cleaned_text.startswith("```") and cleaned_text.endswith("```"):
+                # 处理没有语言标识的代码块
+                cleaned_text = cleaned_text[3:-3].strip()  # 移除 "```" 和 "```"
+                print("检测到 markdown 代码块包装的内容，已自动清理。")
+
             try:
-                parsed_model_output = json.loads(model_output_text)
+                parsed_model_output = json.loads(cleaned_text)
                 if config.LOG_AI_API_CALLS:
                     _log_api_call(request_payload=payload, response_data={"parsed_model_output": parsed_model_output, "raw_api_response": response_json})
-                
+
                 # 如果因为长度限制完成，添加警告
                 if finish_reason == "length":
                     parsed_model_output["warning_finish_reason"] = "length: Response might be truncated."
                 return parsed_model_output
             except json.JSONDecodeError as e:
-                error_msg = f"OpenRouter API 返回的文本不是有效的 JSON 格式: {model_output_text}. Error: {e}"
+                error_msg = f"OpenRouter API 返回的文本不是有效的 JSON 格式: {model_output_text}. 清理后的文本: {cleaned_text}. Error: {e}"
                 print(error_msg)
-                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text, "finish_reason": finish_reason}
+                error_detail = {"error": "Invalid JSON response from model", "raw_output": model_output_text, "cleaned_output": cleaned_text, "finish_reason": finish_reason}
                 if config.LOG_AI_API_CALLS:
-                    _log_api_call(request_payload=payload, response_data={"raw_api_response": response_json, "model_text_output": model_output_text}, error_message=error_msg)
+                    _log_api_call(request_payload=payload, response_data={"raw_api_response": response_json, "model_text_output": model_output_text, "cleaned_text": cleaned_text}, error_message=error_msg)
                 return error_detail
         elif finish_reason == "length":
             error_msg = f"OpenRouter API 响应因长度限制而截断，且未能提取有效文本内容。响应: {response_json}"

@@ -5,3 +5,4 @@ access.log
 test_access_log_analyzer.py
 test_openrouter_connection.py
 test_basic_connectivity.py
+test_openrouter_fixed.py
