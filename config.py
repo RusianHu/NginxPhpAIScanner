@@ -67,6 +67,6 @@ PROXIES = None
 # }
 # 或者使用 SOCKS5 代理 (需要 pip install requests[socks])
 # PROXIES = {
-#    "http": "socks5h://127.0.0.1:1080", # socks5h 表示通过代理进行 DNS 解析
-#    "https": "socks5h://127.0.0.1:1080",
+#    "http": "socks5h://127.0.0.1:10808", # socks5h 表示通过代理进行 DNS 解析
+#    "https": "socks5h://127.0.0.1:10808",
 # }

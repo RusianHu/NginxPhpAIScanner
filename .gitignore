@@ -7,3 +7,4 @@ test_openrouter_connection.py
 test_basic_connectivity.py
 test_openrouter_client.py
 yanshanlaosiji.top.log
+test_with_api_key.py

@@ -47,7 +47,7 @@ def call_openrouter_api(log_data_str, proxies=None):
     """
     调用 OpenRouter API 并获取分析结果。
     :param log_data_str: 要分析的日志数据字符串。
-    :param proxies: 可选的代理配置字典，例如 {"http": "http://127.0.0.1:10809", "https": "http://127.0.0.1:10809"}
+    :param proxies: 可选的代理配置字典，例如 {"http": "http://127.0.0.1:10808", "https": "http://127.0.0.1:10808"}
     :return: API 分析结果或错误信息。
     """
     if not config.OPENROUTER_API_KEY or config.OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY":
